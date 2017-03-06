@@ -27,6 +27,8 @@ from . import utils as mod_utils
 
 import requests as mod_requests
 
+from decimal import Decimal
+
 class GeoElevationData:
     """
     The main class with utility methods for elevations. Note that files are
@@ -34,19 +36,10 @@ class GeoElevationData:
     the earth -- this will load *many* files in memory!
     """
 
-    srtm1_files = None
-    srtm3_files = None
-
     # Lazy loaded files used in current app:
     files = None
 
-    def __init__(self, srtm1_files, srtm3_files, leave_zipped=False,
-                 file_handler=None):
-        self.srtm1_files = srtm1_files
-        self.srtm3_files = srtm3_files
-
-        self.leave_zipped = leave_zipped
-
+    def __init__(self, file_handler=None):
         self.file_handler = file_handler if file_handler else mod_utils.FileHandler()
 
         self.files = {}
@@ -67,7 +60,8 @@ class GeoElevationData:
 
     def get_file(self, latitude, longitude):
         """
-        If the file can't be found -- it will be retrieved from the server.
+        If the file can't be found in memory -- it will be retrieved from the
+        local disk.
         """
         file_name = self.get_file_name(latitude, longitude)
 
@@ -77,7 +71,7 @@ class GeoElevationData:
         if (file_name in self.files):
             return self.files[file_name]
         else:
-            data = self.retrieve_or_load_file_data(file_name)
+            data = self.load_file_data(file_name)
             if not data:
                 return None
 
@@ -85,7 +79,7 @@ class GeoElevationData:
             self.files[file_name] = result
             return result
 
-    def retrieve_or_load_file_data(self, file_name):
+    def load_file_data(self, file_name):
         data_file_name = file_name
         zip_data_file_name = '{0}.zip'.format(file_name)
 
@@ -95,40 +89,7 @@ class GeoElevationData:
             data = self.file_handler.read(zip_data_file_name)
             return mod_utils.unzip(data)
 
-        url = None
-
-        if (file_name in self.srtm1_files):
-            url = self.srtm1_files[file_name]
-        elif (file_name in self.srtm3_files):
-            url = self.srtm3_files[file_name]
-
-        if not url:
-            #mod_logging.error('No file found: {0}'.format(file_name))
-            return None
-
-        try:
-            r = mod_requests.get(url, timeout=5)
-        except mod_requests.exceptions.Timeout:
-            raise Exception('Connection to %s failed (timeout)' % url)
-        if r.status_code < 200 or 300 <= r.status_code:
-            raise Exception('Cannot retrieve %s' % url)
-        mod_logging.info('Retrieving {0}'.format(url))
-        data = r.content
-        mod_logging.info('Retrieved {0} ({1} bytes)'.format(url, len(data)))
-
-        if not data:
-            return None
-
-        # data is zipped:
-
-        if self.leave_zipped:
-            self.file_handler.write(data_file_name + '.zip', data)
-            data = mod_utils.unzip(data)
-        else:
-            data = mod_utils.unzip(data)
-            self.file_handler.write(data_file_name, data)
-
-        return data
+        return None
 
     def get_file_name(self, latitude, longitude):
         # Decide the file name:
@@ -142,14 +103,8 @@ class GeoElevationData:
         else:
             east_west = 'W'
 
-        file_name = '%s%s%s%s.hgt' % (north_south, str(int(abs(mod_math.floor(latitude)))).zfill(2),
-                                      east_west, str(int(abs(mod_math.floor(longitude)))).zfill(3))
-
-        if not (file_name in self.srtm1_files) and not (file_name in self.srtm3_files):
-            #mod_logging.debug('No file found for ({0}, {1}) (file_name: {2})'.format(latitude, longitude, file_name))
-            return None
-
-        return file_name
+        return '%s%s%s%s.hgt' % (north_south, str(int(abs(mod_math.floor(latitude)))).zfill(2),
+                                 east_west, str(int(abs(mod_math.floor(longitude)))).zfill(3))
 
     def get_image(self, size, latitude_interval, longitude_interval, max_elevation,
                   unknown_color = (255, 255, 255, 255), zero_color = (0, 0, 255, 255),
@@ -275,7 +230,7 @@ class GeoElevationData:
         for point in gpx.walk(only_points=True):
             if elevations_1[n] != None and elevations_2[n] != None and elevations_3[n] != None:
                 #print elevations_1[n], elevations_2[n], elevations_3[n]
-                point.elevation = (elevations_1[n] + elevations_2[n] + elevations_3[n]) / 3.
+                point.elevation = round((elevations_1[n] + elevations_2[n] + elevations_3[n]) / 3., 2)
             else:
                 point.elevation = None
             n += 1
@@ -289,7 +244,6 @@ class GeoElevationFile:
     """
 
     file_name = None
-    url = None
 
     latitude = None
     longitude = None

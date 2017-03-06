@@ -27,7 +27,6 @@ mod_distutilscore.setup(
     url = 'https://github.com/tkrajina/srtm.py',
     packages = ['srtm',],
     package_data = {'': ['*.json']},
-    include_package_data = True,
     classifiers = [
         "Programming Language :: Python",
         "Programming Language :: Python :: 2",
